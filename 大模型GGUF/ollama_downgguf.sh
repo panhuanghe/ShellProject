@@ -28,14 +28,30 @@ show_menu() {
 # 逻辑：取最后一部分，去掉 :latest，尝试去掉 -GGUF 以便更整洁
 get_clean_name() {
     local full_path="$1"
-    # 获取最后一个 / 之后的内容
-    local filename=$(basename "$full_path")
-    # 去掉 :latest 标签
-    local name_no_tag="${filename%:latest}"
-    # 可选：如果名字里有 -GGUF，去掉它让名字更短 (根据你提供的例子)
-    local clean_name="${name_no_tag%-GGUF}"
-    
-    echo "$clean_name"
+    # 如果包含标签（冒号），保留原始大小写并用冒号连接（例如: Qwen3.5-2B:Q3_K_M）
+    if [[ "$full_path" == *:* ]]; then
+        local tag="${full_path##*:}"
+        local base="${full_path%%:*}"
+        local filename=$(basename "${base}")
+        local name_no_ext="$filename"
+        # 如果文件名以 .gguf 结尾（任意大小写），去掉扩展名
+        if [[ "${name_no_ext,,}" == *.gguf ]]; then
+            name_no_ext="${name_no_ext%.*}"
+        fi
+        # 去掉尾部的 -GGUF 或 -gguf（有些 repo 名里会带这个后缀）
+        local name_no_gguf="${name_no_ext%-GGUF}"
+        name_no_gguf="${name_no_gguf%-gguf}"
+        echo "${name_no_gguf}:${tag}"
+    else
+        local filename=$(basename "$full_path")
+        local name_no_ext="$filename"
+        if [[ "${name_no_ext,,}" == *.gguf ]]; then
+            name_no_ext="${name_no_ext%.*}"
+        fi
+        local name_no_gguf="${name_no_ext%-GGUF}"
+        name_no_gguf="${name_no_gguf%-gguf}"
+        echo "${name_no_gguf}"
+    fi
 }
 
 # 函数：执行下载和管理流程
@@ -51,11 +67,21 @@ run_process() {
 
     # 构建完整地址
     full_model_addr="modelscope.cn/${model_path}"
-    # 默认添加 :latest 标签以防万一
-    full_model_tag="${full_model_addr}:latest"
+    # 如果用户已在输入中指定了标签或文件名（包含冒号），则不要再追加 :latest
+    if [[ "$model_path" == *:* ]]; then
+        full_model_tag="${full_model_addr}"
+    else
+        full_model_tag="${full_model_addr}:latest"
+    fi
     
-    # 生成新名称
-    new_model_name=$(get_clean_name "$model_path")
+    # 生成建议的新名称（自动推断），并允许用户覆盖
+    suggested_name=$(get_clean_name "$model_path")
+    read -p "建议重命名为: ${suggested_name}，要使用该名称吗？(Y/n 或 输入新名称): " name_choice
+    if [[ -z "$name_choice" || "$name_choice" == "Y" || "$name_choice" == "y" ]]; then
+        new_model_name="$suggested_name"
+    else
+        new_model_name="$name_choice"
+    fi
 
     echo ""
     echo -e "${BLUE}[信息] 完整下载地址：${full_model_tag}${NC}"
